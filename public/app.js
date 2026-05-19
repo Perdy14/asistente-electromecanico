@@ -80,13 +80,13 @@ function setupEventListeners() {
     card.addEventListener("click", () => { inputMensaje.value = card.dataset.query; enviarMensaje(); });
   });
 
-  // Nav items — cambiar vista
-  document.querySelectorAll(".nav-item").forEach(item => {
+  // Nav items — cambiar vista (sidebar y barra movil)
+  document.querySelectorAll(".nav-item, .mobile-nav-item").forEach(item => {
     item.addEventListener("click", () => {
       const view = item.dataset.view;
       cambiarVista(view);
       // Cerrar sidebar en movil al cambiar vista
-      if (window.innerWidth <= 768) {
+      if (window.innerWidth <= 1024) {
         sidebar.classList.remove("open");
         document.body.classList.remove("sidebar-open");
       }
@@ -141,9 +141,19 @@ function setupEventListeners() {
 
 // ═══ VISTAS ═══
 function cambiarVista(viewId) {
-  // Actualizar nav
+  // Actualizar nav (sidebar)
   document.querySelectorAll(".nav-item").forEach(i => i.classList.remove("active"));
-  document.querySelector(`[data-view="${viewId}"]`).classList.add("active");
+  const navSidebar = document.querySelector(`.nav-item[data-view="${viewId}"]`);
+  if (navSidebar) navSidebar.classList.add("active");
+
+  // Actualizar nav (barra movil)
+  document.querySelectorAll(".mobile-nav-item").forEach(i => i.classList.remove("active"));
+  const navMobile = document.querySelector(`.mobile-nav-item[data-view="${viewId}"]`);
+  if (navMobile) {
+    navMobile.classList.add("active");
+    // Hacer scroll horizontal para que el activo sea visible
+    navMobile.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+  }
 
   // Mostrar panel
   document.querySelectorAll(".view-panel").forEach(p => p.classList.remove("active"));

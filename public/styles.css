@@ -520,7 +520,7 @@ body {
 
 /* ═══ RESPONSIVE ═══ */
 @media (max-width: 1024px) {
-  /* Sidebar oculto por defecto en movil/tablet */
+  /* Sidebar oculto fuera de pantalla en movil */
   .sidebar {
     position: fixed !important;
     left: 0; top: 0; bottom: 0;
@@ -541,36 +541,95 @@ body {
   }
   body.sidebar-open .sidebar-overlay { display: block; }
 
-  /* Header SIEMPRE visible y prominente */
+  /* Header con barra de navegacion integrada */
   .main-header {
     display: flex !important;
-    padding: 12px 14px !important;
-    min-height: 56px !important;
+    flex-direction: column !important;
+    padding: 0 !important;
+    min-height: auto !important;
     background: var(--bg-secondary) !important;
     position: sticky; top: 0; z-index: 50;
     border-bottom: 1px solid var(--border-color) !important;
+    align-items: stretch !important;
   }
-  .header-left { display: flex !important; align-items: center; gap: 10px; }
-  .header-left h1 { font-size: 15px; font-weight: 600; color: var(--text-primary); }
 
-  /* Boton hamburguesa MUY visible */
+  /* Fila superior: logo y botones */
+  .header-left, .header-right {
+    padding: 8px 12px;
+  }
+  .header-left {
+    display: flex !important;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid var(--border-color);
+    justify-content: space-between;
+  }
+  .header-left h1 { font-size: 14px; font-weight: 600; color: var(--text-primary); flex: 1; }
+  .header-right {
+    display: flex;
+    gap: 4px;
+    justify-content: flex-end;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  /* Boton hamburguesa visible en movil */
   #btn-toggle-sidebar {
     display: flex !important;
-    width: 40px !important;
-    height: 40px !important;
+    width: 36px !important;
+    height: 36px !important;
     align-items: center !important;
     justify-content: center !important;
-    background: var(--accent-primary) !important;
-    border: none !important;
-    color: white !important;
+    background: var(--bg-tertiary) !important;
+    border: 1px solid var(--border-color) !important;
+    color: var(--text-primary) !important;
     border-radius: 8px !important;
     cursor: pointer;
     flex-shrink: 0;
   }
-  #btn-toggle-sidebar svg { width: 22px !important; height: 22px !important; }
-  #btn-toggle-sidebar:hover { opacity: 0.9; }
+  #btn-toggle-sidebar svg { width: 20px !important; height: 20px !important; }
+
+  /* Barra de navegacion movil siempre visible */
+  .mobile-nav {
+    display: flex !important;
+    overflow-x: auto;
+    gap: 4px;
+    padding: 8px 12px;
+    background: var(--bg-secondary);
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .mobile-nav::-webkit-scrollbar { display: none; }
+
+  .mobile-nav-item {
+    display: flex; align-items: center; gap: 6px;
+    padding: 8px 14px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    color: var(--text-secondary);
+    font-size: 12px; font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: all 0.15s;
+  }
+  .mobile-nav-item.active {
+    background: var(--accent-gradient);
+    color: white;
+    border-color: transparent;
+  }
+  .mobile-nav-item.active svg { color: white; }
+  .mobile-nav-item svg { width: 14px; height: 14px; flex-shrink: 0; }
 
   .main-content { width: 100%; }
+}
+
+/* En PC ocultamos la barra movil */
+@media (min-width: 1025px) {
+  .mobile-nav { display: none !important; }
+  #btn-toggle-sidebar { display: none !important; }
+  .sidebar-overlay { display: none !important; }
+  .sidebar { position: relative; transform: none; }
 }
 
 @media (max-width: 768px) {
@@ -583,11 +642,4 @@ body {
   .video-results-grid { grid-template-columns: 1fr; }
   .video-search-box { flex-direction: column; }
   .video-search-box .btn-primary { width: 100%; }
-  .header-left h1 { font-size: 13px; }
-}
-
-@media (min-width: 1025px) {
-  #btn-toggle-sidebar { display: none !important; }
-  .sidebar-overlay { display: none !important; }
-  .sidebar { position: relative; transform: none; }
 }
