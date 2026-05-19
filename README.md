@@ -4,6 +4,12 @@ Sistema experto de diagnóstico automotriz con IA local, sin límites y sin cost
 
 Proyecto desarrollado para el IES La Palma.
 
+## 🌐 Demo en vivo
+
+**[https://mecanicaai.tailabb588.ts.net](https://mecanicaai.tailabb588.ts.net)**
+
+> El asistente está alojado en local y publicado mediante Tailscale Funnel. Disponible las 24h mientras el equipo esté operativo.
+
 ## ✨ Características
 
 - 🤖 **IA local con Ollama** — Sin API de pago, sin límites, sin internet (una vez instalado)
