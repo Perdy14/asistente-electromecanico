@@ -54,11 +54,24 @@ function setupEventListeners() {
   btnExportar.addEventListener("click", exportarConversacion);
   btnNuevaConv.addEventListener("click", nuevaConversacion);
   btnTheme.addEventListener("click", toggleTema);
-  btnToggleSidebar.addEventListener("click", () => sidebar.classList.toggle("open"));
+  btnToggleSidebar.addEventListener("click", () => {
+    sidebar.classList.toggle("open");
+    document.body.classList.toggle("sidebar-open");
+  });
+
+  // Cerrar sidebar al tocar overlay
+  const overlay = document.getElementById("sidebar-overlay");
+  if (overlay) {
+    overlay.addEventListener("click", () => {
+      sidebar.classList.remove("open");
+      document.body.classList.remove("sidebar-open");
+    });
+  }
 
   document.addEventListener("click", (e) => {
-    if (window.innerWidth <= 768 && !sidebar.contains(e.target) && !btnToggleSidebar.contains(e.target)) {
+    if (window.innerWidth <= 768 && !sidebar.contains(e.target) && !btnToggleSidebar.contains(e.target) && !e.target.closest(".sidebar-overlay")) {
       sidebar.classList.remove("open");
+      document.body.classList.remove("sidebar-open");
     }
   });
 
@@ -72,6 +85,11 @@ function setupEventListeners() {
     item.addEventListener("click", () => {
       const view = item.dataset.view;
       cambiarVista(view);
+      // Cerrar sidebar en movil al cambiar vista
+      if (window.innerWidth <= 768) {
+        sidebar.classList.remove("open");
+        document.body.classList.remove("sidebar-open");
+      }
     });
   });
 

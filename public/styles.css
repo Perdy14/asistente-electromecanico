@@ -520,14 +520,55 @@ body {
 
 /* ═══ RESPONSIVE ═══ */
 @media (max-width: 768px) {
-  .sidebar { position: fixed; left: 0; top: 0; bottom: 0; transform: translateX(-100%); box-shadow: var(--shadow-md); }
+  .sidebar {
+    position: fixed; left: 0; top: 0; bottom: 0;
+    transform: translateX(-100%);
+    box-shadow: var(--shadow-md);
+    width: 270px; min-width: 270px;
+  }
   .sidebar.open { transform: translateX(0); }
+
+  /* Overlay oscuro cuando el sidebar esta abierto */
+  .sidebar-overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 99;
+  }
+  body.sidebar-open .sidebar-overlay { display: block; }
+
+  /* Header mas visible en movil */
+  .main-header {
+    padding: 10px 12px;
+    min-height: 52px;
+    background: var(--bg-secondary);
+  }
+  .header-left h1 { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+
+  /* Boton hamburguesa mas grande y visible */
+  .main-header #btn-toggle-sidebar {
+    width: 38px; height: 38px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+  }
+  .main-header #btn-toggle-sidebar:hover {
+    background: var(--bg-hover);
+  }
+  .main-header #btn-toggle-sidebar svg { width: 22px; height: 22px; }
+
+  /* Welcome y otros */
   .welcome-grid { grid-template-columns: 1fr; }
   .form-row { grid-template-columns: 1fr; }
   .message { max-width: 92%; }
   .chat-area { padding: 12px; }
   .panel-content { padding: 14px; }
+  .video-quick-grid { grid-template-columns: 1fr 1fr; }
+  .video-results-grid { grid-template-columns: 1fr; }
+  .video-search-box { flex-direction: column; }
+  .video-search-box .btn-primary { width: 100%; }
 }
 @media (min-width: 769px) {
   #btn-toggle-sidebar { display: none; }
+  .sidebar-overlay { display: none !important; }
 }
