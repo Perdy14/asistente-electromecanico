@@ -69,7 +69,7 @@ function setupEventListeners() {
   }
 
   document.addEventListener("click", (e) => {
-    if (window.innerWidth <= 768 && !sidebar.contains(e.target) && !btnToggleSidebar.contains(e.target) && !e.target.closest(".sidebar-overlay")) {
+    if (window.innerWidth <= 1024 && !sidebar.contains(e.target) && !btnToggleSidebar.contains(e.target) && !e.target.closest(".sidebar-overlay")) {
       sidebar.classList.remove("open");
       document.body.classList.remove("sidebar-open");
     }
