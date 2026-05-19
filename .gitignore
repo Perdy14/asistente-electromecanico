@@ -1,0 +1,19 @@
+# Dependencias
+node_modules/
+
+# Logs
+*.log
+server.log
+tunnel.log
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Variables de entorno
+.env
+.env.local
