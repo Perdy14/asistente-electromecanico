@@ -1,10 +1,5 @@
 {
-  "_descripcion": "IDs de Google Docs publicos que alimentan la base de conocimiento. Anade aqui los IDs de cada documento (la parte de la URL despues de /document/d/).",
-  "docs": [
-    "1yu5WF6Wdf2Yn9Y18fYJuZJGD7VhpMF4F61r3mXvS7oI",
-    "1Qn-46PDPoXTbn_ujF_z32zJkIuRqDc5IKVYCo8-h5o0",
-    "1VsbPjJLLoQE9poDeiZV1eV0_tdH_0PEsoDlbTGVLyD0",
-    "1Yfdb9oWDf_MjvDOQNaNDqUje8qDHPMqh5Mm5mSwVtTI",
-    "1NxRECv9sVR4r2iUW4SQAwiwzfxw50eDZNT8y5PdzM4g"
-  ]
+  "_descripcion": "Configuracion de Google Drive. Si pones folder_id, el sistema detecta automaticamente todos los documentos publicos de esa carpeta. Si no, usa la lista manual de docs.",
+  "folder_id": "1QoaXx5-J7NtgxDVvhA-clQcTr3unHMrf",
+  "docs": []
 }
