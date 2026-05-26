@@ -208,6 +208,20 @@ async function sincronizar() {
       console.log(`📥 Descargando ${docId}...`);
       const texto = await descargarDoc(docId);
       console.log(`   ${texto.length} caracteres`);
+
+      // Filtro: solo procesar documentos que tengan formato de Nota Maestra
+      // Deben contener "Titulo Archivo" o "METADATOS DEL CASO" o "SISTEMA SANO"
+      const esNotaTecnica =
+        /T[ií]tulo\s*Archivo:/i.test(texto) ||
+        /METADATOS\s*DEL\s*CASO/i.test(texto) ||
+        /SISTEMA\s*SANO/i.test(texto) ||
+        /SALIDA\s*1:\s*NOTA\s*MAESTRA/i.test(texto);
+
+      if (!esNotaTecnica) {
+        console.log(`   ⏭️  Saltado: no tiene formato de nota tecnica`);
+        continue;
+      }
+
       const nota = parsearNota(texto, docId);
       notas.push(nota);
       console.log(`   ✅ Procesado: ${nota.id}`);

@@ -31,26 +31,6 @@
     "fuente_drive_id": "1yu5WF6Wdf2Yn9Y18fYJuZJGD7VhpMF4F61r3mXvS7oI"
   },
   {
-    "id": "DRIVE.13FSPNATQ-OH",
-    "categoria": "CONOCIMIENTO DE SISTEMA",
-    "sistema": "",
-    "titulo": "Documento Drive 13FSpNat",
-    "autor": "",
-    "vehiculo": "",
-    "sintomas": [],
-    "componentes": [],
-    "parametros_vitales": [],
-    "diagnostico_logico": [],
-    "resumen": "",
-    "verificacion": "",
-    "resolucion": "",
-    "falso_diagnostico": "",
-    "causa_raiz": "",
-    "nivel_evidencia": "MEDIO",
-    "video": "",
-    "fuente_drive_id": "13FSpNatQ-OHJJl8uJMip9AfZIxrT1GSmOIxv3jQQwQk"
-  },
-  {
     "id": "NT_ESCAPE-EGR-SCR_FALLO-COMPONENTE_V1",
     "categoria": "PROCEDIMIENTO DE VERIFICACION",
     "sistema": "3.0 TDI, Toyota Prius 2012 / Sistemas de Escape, EGR (Alta/Baja), FAP y SCR .",
