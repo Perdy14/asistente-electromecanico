@@ -4,14 +4,30 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>MecánicaAI</title>
-  <link rel="stylesheet" href="styles.css?v=6">
+  <link rel="stylesheet" href="styles.css?v=7">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔧</text></svg>">
 </head>
 <body>
-  <div class="app-container">
+  <!-- ═══ PANTALLA DE LOGIN ═══ -->
+  <div id="login-screen" class="login-screen">
+    <div class="login-box">
+      <div class="login-logo">🔧</div>
+      <h1>MecánicaAI</h1>
+      <p class="login-subtitle">Asistente Guiado para el Electromecánico</p>
+      <p class="login-desc">Identifícate para empezar a usar el asistente</p>
+      <form id="login-form" class="login-form">
+        <input type="text" id="login-nombre" class="form-input" placeholder="Nombre completo" required>
+        <input type="email" id="login-email" class="form-input" placeholder="Email" required>
+        <button type="submit" class="btn-primary">🚀 Entrar</button>
+      </form>
+      <p class="login-info">Tus datos solo se guardan localmente para que el profesor pueda ver tus consultas. No se comparten con nadie.</p>
+    </div>
+  </div>
+
+  <div class="app-container hidden" id="app-container">
     <!-- Overlay para sidebar movil -->
     <div class="sidebar-overlay" id="sidebar-overlay"></div>
 
@@ -44,6 +60,10 @@
           <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="4" width="14" height="10" rx="2" stroke="currentColor" stroke-width="1.4"/><path d="M7.5 7.5l4 2.5-4 2.5v-5z" fill="currentColor"/></svg>
           <span>Vídeos</span>
         </button>
+        <button class="nav-item nav-admin hidden" data-view="admin" id="nav-admin">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="6" r="3" stroke="currentColor" stroke-width="1.4"/><path d="M3 16c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke="currentColor" stroke-width="1.4"/></svg>
+          <span>Panel Admin</span>
+        </button>
       </nav>
 
       <div class="sidebar-section" id="section-conversaciones">
@@ -52,6 +72,16 @@
       </div>
 
       <div class="sidebar-footer">
+        <div id="user-info" class="user-info">
+          <div class="user-avatar" id="user-avatar">A</div>
+          <div class="user-details">
+            <div class="user-name" id="user-name">-</div>
+            <div class="user-email" id="user-email">-</div>
+          </div>
+          <button id="btn-logout" class="btn-icon-sm" title="Cerrar sesión">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M5 3V2a1 1 0 011-1h5a1 1 0 011 1v10a1 1 0 01-1 1H6a1 1 0 01-1-1v-1M2 7h7M7 4l3 3-3 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
         <div class="footer-row">
           <div class="estado-badge">
             <span class="estado-dot" id="estado-dot"></span>
@@ -188,8 +218,9 @@
         <div class="panel-content">
           <div class="panel-header-section">
             <h2>📚 Notas Técnicas</h2>
-            <p>Base de conocimiento verificada. <button id="btn-mostrar-form-nota" class="btn-link">+ Añadir nueva nota</button></p>
+            <p>Base de conocimiento alimentada desde Google Drive. <button id="btn-sync-drive" class="btn-link">🔄 Sincronizar con Drive</button> · <button id="btn-mostrar-form-nota" class="btn-link">+ Añadir nota manual</button></p>
             <input type="text" id="buscar-nota" placeholder="Buscar por síntoma, sistema, código..." class="form-input search-box">
+            <div id="sync-status" class="sync-status hidden"></div>
           </div>
 
           <!-- Formulario añadir nota (oculto por defecto) -->
@@ -318,9 +349,37 @@
         </div>
       </div>
 
+      <!-- ═══ VISTA: PANEL ADMIN ═══ -->
+      <div class="view-panel" id="view-admin">
+        <div class="panel-content">
+          <div class="panel-header-section">
+            <h2>👨‍🏫 Panel del Profesor</h2>
+            <p>Visualiza la actividad de los alumnos en el asistente.</p>
+          </div>
+
+          <!-- Estadísticas -->
+          <div id="admin-stats" class="admin-stats"></div>
+
+          <!-- Lista de alumnos -->
+          <div class="admin-section">
+            <h3>👥 Alumnos registrados</h3>
+            <div id="admin-usuarios" class="admin-usuarios"></div>
+          </div>
+
+          <!-- Detalle de preguntas (oculto hasta que se seleccione un alumno) -->
+          <div id="admin-detalle" class="admin-detalle hidden">
+            <div class="admin-detalle-header">
+              <button id="btn-volver-admin" class="btn-secondary">← Volver a alumnos</button>
+              <h3 id="admin-detalle-titulo">Preguntas del alumno</h3>
+            </div>
+            <div id="admin-preguntas" class="admin-preguntas"></div>
+          </div>
+        </div>
+      </div>
+
     </main>
   </div>
 
-  <script src="app.js?v=6"></script>
+  <script src="app.js?v=7"></script>
 </body>
 </html>

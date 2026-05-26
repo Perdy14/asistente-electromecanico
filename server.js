@@ -3,97 +3,131 @@ const cors = require("cors");
 const path = require("path");
 const SYSTEM_PROMPT = require("./system_prompt");
 const buscarNotasRelevantes = require("./buscar_notas");
+const dbModule = require("./db");
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-// Almacén de conversaciones en memoria
-const conversaciones = {};
+// ═══ CONFIGURACIÓN ═══
+// Clave de admin (cambiar en produccion via variable de entorno)
+const ADMIN_KEY = process.env.ADMIN_KEY || "mecanicaai-admin-2026";
+// Email del admin principal (se le da rol admin automaticamente al registrarse)
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "antoniibeltran2@gmail.com";
 
-// ═══ CONFIGURACIÓN DE IA ═══
-// Si hay GROQ_API_KEY, usa Groq (cloud, gratis, rápido)
-// Si no, usa Ollama local (requiere tener Ollama instalado)
+// ═══ CONFIGURACION DE IA ═══
 const GROQ_API_KEY = process.env.GROQ_API_KEY || "";
 const USE_GROQ = GROQ_API_KEY.length > 0;
-
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
-
 const OLLAMA_URL = "http://localhost:11434/api/chat";
 const OLLAMA_MODEL = "llama3.2";
-
 const MODELO = USE_GROQ ? GROQ_MODEL : OLLAMA_MODEL;
 
 
 // ═══════════════════════════════════════════════════════════
-// STREAMING ENDPOINT — Soporta Groq y Ollama
+// AUTENTICACION
+// ═══════════════════════════════════════════════════════════
+
+// Login simple: el usuario da nombre y email, se registra/loguea
+app.post("/api/login", (req, res) => {
+  const { email, nombre } = req.body;
+  if (!email || !nombre) {
+    return res.status(400).json({ error: "Email y nombre son obligatorios" });
+  }
+  if (!email.includes("@") || !email.includes(".")) {
+    return res.status(400).json({ error: "Email no valido" });
+  }
+
+  const usuario = dbModule.crearOActualizarUsuario(email, nombre);
+
+  // Si es el admin principal, darle rol admin
+  if (email.toLowerCase() === ADMIN_EMAIL.toLowerCase() && usuario.rol !== "admin") {
+    dbModule.db.prepare("UPDATE usuarios SET rol = 'admin' WHERE id = ?").run(usuario.id);
+    usuario.rol = "admin";
+  }
+
+  res.json({
+    ok: true,
+    usuario: {
+      id: usuario.id,
+      email: usuario.email,
+      nombre: usuario.nombre,
+      rol: usuario.rol
+    }
+  });
+});
+
+// Verificar usuario (para reanudar sesion)
+app.get("/api/usuario/:id", (req, res) => {
+  const usuario = dbModule.obtenerUsuarioPorId(parseInt(req.params.id));
+  if (!usuario) return res.status(404).json({ error: "Usuario no encontrado" });
+  res.json({ usuario: { id: usuario.id, email: usuario.email, nombre: usuario.nombre, rol: usuario.rol } });
+});
+
+// ═══════════════════════════════════════════════════════════
+// MENSAJES (con guardado en DB)
 // ═══════════════════════════════════════════════════════════
 
 app.post("/api/mensaje/stream", async (req, res) => {
-  const { mensaje, sessionId } = req.body;
+  const { mensaje, sessionId, usuarioId, conversacionId } = req.body;
   if (!mensaje) return res.status(400).json({ error: "Mensaje requerido" });
+  if (!usuarioId) return res.status(401).json({ error: "Usuario no autenticado" });
 
-  const sid = sessionId || "default";
-  if (!conversaciones[sid]) conversaciones[sid] = [];
+  // Crear o usar conversacion
+  let convId = conversacionId;
+  if (!convId) {
+    convId = dbModule.crearConversacion(usuarioId, mensaje.substring(0, 60));
+  }
+
+  // Cargar historial de la conversacion
+  const historialDB = dbModule.obtenerMensajesConversacion(convId);
+  const historial = [];
+  historialDB.slice(-10).forEach(m => {
+    historial.push({ role: "user", content: m.pregunta });
+    if (m.respuesta) historial.push({ role: "assistant", content: m.respuesta });
+  });
 
   const notasRelevantes = buscarNotasRelevantes(mensaje);
-
   let contenidoUsuario = "";
   if (notasRelevantes) {
-    contenidoUsuario = `NOTAS TÉCNICAS RELEVANTES:\n${notasRelevantes}\n\n---\nPREGUNTA DEL TÉCNICO: ${mensaje}`;
+    contenidoUsuario = `NOTAS TECNICAS DE LA BASE DE CONOCIMIENTO (UNICA FUENTE PERMITIDA):\n${notasRelevantes}\n\n---\nPREGUNTA DEL TECNICO: ${mensaje}\n\nResponde USANDO SOLO la informacion de las notas anteriores. Si la pregunta no se puede responder con esas notas, responde con "Informacion no disponible".`;
   } else {
-    contenidoUsuario = `No hay notas específicas para esta consulta. Responde con tu conocimiento de mecánica automotriz.\n\nPREGUNTA: ${mensaje}`;
+    contenidoUsuario = `NO HAY NOTAS RELEVANTES EN LA BASE DE CONOCIMIENTO PARA ESTA CONSULTA.\n\nPREGUNTA: ${mensaje}\n\nResponde EXACTAMENTE con el mensaje de "Informacion no disponible" tal como te indica el system prompt. NO uses tu conocimiento general.`;
   }
 
   const messages = [
     { role: "system", content: SYSTEM_PROMPT },
-    ...conversaciones[sid].slice(-10),
+    ...historial,
     { role: "user", content: contenidoUsuario }
   ];
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
-  res.write(`data: ${JSON.stringify({ type: "info", notasEncontradas: !!notasRelevantes })}\n\n`);
+  res.write(`data: ${JSON.stringify({ type: "info", notasEncontradas: !!notasRelevantes, conversacionId: convId })}\n\n`);
+
+  let respuestaCompleta = "";
 
   try {
-    let respuestaCompleta = "";
-
     if (USE_GROQ) {
-      // ═══ GROQ (cloud) ═══
       const response = await fetch(GROQ_URL, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${GROQ_API_KEY}`
-        },
-        body: JSON.stringify({
-          model: GROQ_MODEL,
-          messages: messages,
-          stream: true,
-          temperature: 0.3,
-          max_tokens: 2048
-        })
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${GROQ_API_KEY}` },
+        body: JSON.stringify({ model: GROQ_MODEL, messages, stream: true, temperature: 0.2, max_tokens: 2048 })
       });
-
-      if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Groq error ${response.status}: ${errText}`);
-      }
+      if (!response.ok) throw new Error(`Groq error ${response.status}`);
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
-
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop() || "";
-
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
           const data = line.slice(6).trim();
@@ -109,23 +143,14 @@ app.post("/api/mensaje/stream", async (req, res) => {
         }
       }
     } else {
-      // ═══ OLLAMA (local) ═══
       const response = await fetch(OLLAMA_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: OLLAMA_MODEL,
-          messages: messages,
-          stream: true,
-          options: { temperature: 0.3, num_predict: 2048 }
-        })
+        body: JSON.stringify({ model: OLLAMA_MODEL, messages, stream: true, options: { temperature: 0.2, num_predict: 2048 } })
       });
-
       if (!response.ok) throw new Error(`Ollama error ${response.status}`);
-
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -143,118 +168,67 @@ app.post("/api/mensaje/stream", async (req, res) => {
       }
     }
 
-    // Guardar en historial
-    conversaciones[sid].push({ role: "user", content: mensaje });
-    conversaciones[sid].push({ role: "assistant", content: respuestaCompleta });
-    if (conversaciones[sid].length > 20) {
-      conversaciones[sid] = conversaciones[sid].slice(-20);
+    // Guardar en BD
+    let notaUsada = "";
+    if (notasRelevantes) {
+      const m = notasRelevantes.match(/NODO:\s*([^\s]+)/);
+      if (m) notaUsada = m[1];
     }
+    dbModule.guardarMensaje(convId, usuarioId, mensaje, respuestaCompleta, notaUsada);
 
-    res.write(`data: ${JSON.stringify({ type: "done" })}\n\n`);
+    res.write(`data: ${JSON.stringify({ type: "done", conversacionId: convId })}\n\n`);
     res.end();
 
   } catch (err) {
     console.log("Error en stream:", err.message);
-    const respuestaLocal = generarRespuestaLocal(mensaje, notasRelevantes);
+    const respuestaLocal = "⚠️ Informacion no disponible.\n\nEsta consulta no se encuentra en la base de conocimiento actual.";
     res.write(`data: ${JSON.stringify({ type: "token", content: respuestaLocal })}\n\n`);
-    res.write(`data: ${JSON.stringify({ type: "done", fallback: true })}\n\n`);
+    res.write(`data: ${JSON.stringify({ type: "done", fallback: true, conversacionId: convId })}\n\n`);
     res.end();
-    conversaciones[sid].push({ role: "user", content: mensaje });
-    conversaciones[sid].push({ role: "assistant", content: respuestaLocal });
+    dbModule.guardarMensaje(convId, usuarioId, mensaje, respuestaLocal, "");
   }
 });
 
-
-// ═══ Endpoint clasico (no streaming) ═══
-app.post("/api/mensaje", async (req, res) => {
-  const { mensaje, sessionId } = req.body;
-  if (!mensaje) return res.status(400).json({ error: "Mensaje requerido" });
-
-  const sid = sessionId || "default";
-  if (!conversaciones[sid]) conversaciones[sid] = [];
-
-  const notasRelevantes = buscarNotasRelevantes(mensaje);
-  const contenidoUsuario = notasRelevantes
-    ? `NOTAS RELEVANTES:\n${notasRelevantes}\n\n---\nPREGUNTA: ${mensaje}`
-    : `Sin notas. PREGUNTA: ${mensaje}`;
-
-  const messages = [
-    { role: "system", content: SYSTEM_PROMPT },
-    ...conversaciones[sid].slice(-10),
-    { role: "user", content: contenidoUsuario }
-  ];
-
-  try {
-    let respuesta;
-    if (USE_GROQ) {
-      const response = await fetch(GROQ_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${GROQ_API_KEY}`
-        },
-        body: JSON.stringify({
-          model: GROQ_MODEL,
-          messages,
-          temperature: 0.3,
-          max_tokens: 2048
-        })
-      });
-      if (!response.ok) throw new Error("Groq error");
-      const data = await response.json();
-      respuesta = data.choices[0].message.content;
-    } else {
-      const response = await fetch(OLLAMA_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: OLLAMA_MODEL,
-          messages,
-          stream: false,
-          options: { temperature: 0.3, num_predict: 2048 }
-        })
-      });
-      if (!response.ok) throw new Error("Ollama error");
-      const data = await response.json();
-      respuesta = data.message.content;
-    }
-
-    conversaciones[sid].push({ role: "user", content: mensaje });
-    conversaciones[sid].push({ role: "assistant", content: respuesta });
-    if (conversaciones[sid].length > 20) conversaciones[sid] = conversaciones[sid].slice(-20);
-
-    res.json({ respuesta, notasEncontradas: !!notasRelevantes, usaIA: true });
-  } catch (err) {
-    const respuesta = generarRespuestaLocal(mensaje, notasRelevantes);
-    conversaciones[sid].push({ role: "user", content: mensaje });
-    conversaciones[sid].push({ role: "assistant", content: respuesta });
-    res.json({ respuesta, notasEncontradas: !!notasRelevantes, usaIA: false });
-  }
+// ═══ Conversaciones ═══
+app.get("/api/conversaciones/:usuarioId", (req, res) => {
+  const convs = dbModule.listarConversaciones(parseInt(req.params.usuarioId));
+  res.json(convs);
 });
 
-function generarRespuestaLocal(mensajeTecnico, notasEncontradas) {
-  const mensaje = mensajeTecnico.toLowerCase();
-  if (notasEncontradas) {
-    delete require.cache[require.resolve("./notas.json")];
-    const notas = require("./notas.json");
-    const relevantes = notas.filter(nota =>
-      nota.sintomas.some(s => mensaje.includes(s.toLowerCase())) ||
-      nota.componentes.some(c => mensaje.includes(c.toLowerCase()))
-    );
-    if (relevantes.length > 0) {
-      const nota = relevantes[0];
-      let r = `🔧 **Sistema:** ${nota.sistema}\n\n`;
-      r += `📋 **Hipótesis:** ${nota.resumen}\n\n`;
-      r += `**Causa raíz:** ${nota.causa_raiz}\n\n`;
-      r += `**📐 Parámetros:**\n${nota.parametros_vitales.map(p => "- " + p).join("\n")}\n\n`;
-      r += `**✅ Verificación:** ${nota.verificacion}\n\n`;
-      r += `**🔧 Resolución:** ${nota.resolucion}\n\n`;
-      r += `**⚠️ Falso diagnóstico:** ${nota.falso_diagnostico}`;
-      return r;
-    }
+app.get("/api/conversacion/:id/mensajes", (req, res) => {
+  const msgs = dbModule.obtenerMensajesConversacion(parseInt(req.params.id));
+  res.json(msgs);
+});
+
+// ═══════════════════════════════════════════════════════════
+// PANEL ADMIN (protegido)
+// ═══════════════════════════════════════════════════════════
+
+function verificarAdmin(req, res, next) {
+  const key = req.headers["x-admin-key"] || req.query.admin_key;
+  if (key !== ADMIN_KEY) {
+    return res.status(403).json({ error: "Acceso no autorizado" });
   }
-  return `⚠️ Servicio de IA no disponible temporalmente. Inténtalo de nuevo en unos segundos.`;
+  next();
 }
+
+app.get("/api/admin/usuarios", verificarAdmin, (req, res) => {
+  res.json(dbModule.listarUsuarios());
+});
+
+app.get("/api/admin/usuario/:id/preguntas", verificarAdmin, (req, res) => {
+  const preguntas = dbModule.preguntasDeUsuario(parseInt(req.params.id), 200);
+  const usuario = dbModule.obtenerUsuarioPorId(parseInt(req.params.id));
+  res.json({ usuario, preguntas });
+});
+
+app.get("/api/admin/estadisticas", verificarAdmin, (req, res) => {
+  res.json(dbModule.estadisticas());
+});
+
+// ═══════════════════════════════════════════════════════════
+// NOTAS Y SINCRONIZACION
+// ═══════════════════════════════════════════════════════════
 
 app.get("/api/notas", (req, res) => {
   delete require.cache[require.resolve("./notas.json")];
@@ -297,9 +271,17 @@ app.post("/api/notas", (req, res) => {
   }
 });
 
+app.post("/api/sync-drive", async (req, res) => {
+  try {
+    const { sincronizar } = require("./sync_drive");
+    const resultado = await sincronizar();
+    res.json(resultado);
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 app.post("/api/limpiar", (req, res) => {
-  const sid = req.body.sessionId || "default";
-  conversaciones[sid] = [];
   res.json({ ok: true });
 });
 
@@ -371,10 +353,12 @@ app.get("/api/estado", async (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`\n═══════════════════════════════════════════════════════════`);
-  console.log(`  🔧 ASISTENTE GUIADO PARA EL ELECTROMECÁNICO`);
+  console.log(`  🔧 MECANICA AI`);
   console.log(`  📡 Servidor: puerto ${PORT}`);
   console.log(`  📚 Notas: ${require("./notas.json").length}`);
   console.log(`  🤖 Proveedor IA: ${USE_GROQ ? "Groq (cloud)" : "Ollama (local)"}`);
   console.log(`  🤖 Modelo: ${MODELO}`);
+  console.log(`  👤 Admin email: ${ADMIN_EMAIL}`);
+  console.log(`  🔑 Admin key: ${ADMIN_KEY}`);
   console.log(`═══════════════════════════════════════════════════════════\n`);
 });
