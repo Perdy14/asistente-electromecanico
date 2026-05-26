@@ -1,83 +1,113 @@
-const path = require("path");
-
 /**
- * Busca notas relevantes en la base de conocimiento.
- * Devuelve el CONTENIDO COMPLETO de las notas mas relevantes para que la IA
- * tenga toda la informacion del documento original (no solo metadatos).
+ * Buscador de notas tecnicas mejorado.
+ * Busca palabras clave en multiples campos de cada nota:
+ * sintomas, componentes, sistema, titulo, vehiculo, resumen, parametros, diagnostico, causa raiz.
+ *
+ * Devuelve las notas mas relevantes ordenadas por puntuacion.
  */
+
+function normalizar(texto) {
+  if (!texto) return "";
+  return texto.toString()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // quitar acentos
+    .replace(/[^a-z0-9\s]/g, " ") // solo letras y numeros
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extraerPalabrasClave(texto) {
+  const stopWords = new Set([
+    "el","la","los","las","un","una","unos","unas","de","del","al","y","o","en","con","por","para",
+    "que","como","cuando","donde","es","son","esta","estan","ser","tener","hacer","muy","mas","menos",
+    "este","esta","ese","esa","aquel","aquella","tu","tus","mi","mis","su","sus","nos","te","me",
+    "tengo","tiene","tienes","hay","fue","fui","sera","si","no","ni","tambien","pero","aunque",
+    "ahora","ya","luego","despues","antes","quiero","puedo","pueda","necesito","necesita"
+  ]);
+  const norm = normalizar(texto);
+  return norm.split(/\s+/).filter(p => p.length >= 3 && !stopWords.has(p));
+}
+
 function buscarNotasRelevantes(mensajeTecnico) {
-  // Recargar siempre por si se actualizo
   delete require.cache[require.resolve("./notas.json")];
   const notas = require("./notas.json");
-  const mensaje = mensajeTecnico.toLowerCase();
+
+  const palabrasClave = extraerPalabrasClave(mensajeTecnico);
+  if (palabrasClave.length === 0) return null;
 
   const resultados = notas.map(nota => {
     let score = 0;
 
-    // Coincidencia por sintomas (peso alto)
-    if (nota.sintomas) {
-      const sintomasCoincidentes = nota.sintomas.filter(s => mensaje.includes(s.toLowerCase()));
-      score += sintomasCoincidentes.length * 5;
-    }
+    // Texto completo de la nota normalizado para buscar
+    const textoCompleto = normalizar([
+      nota.titulo || "",
+      nota.sistema || "",
+      nota.vehiculo || "",
+      nota.resumen || "",
+      nota.causa_raiz || "",
+      nota.verificacion || "",
+      nota.resolucion || "",
+      nota.falso_diagnostico || "",
+      (nota.sintomas || []).join(" "),
+      (nota.componentes || []).join(" "),
+      (nota.parametros_vitales || []).join(" "),
+      (nota.diagnostico_logico || []).join(" "),
+      nota.id || "",
+      nota.categoria || ""
+    ].join(" "));
 
-    // Coincidencia por componentes
-    if (nota.componentes) {
-      const compCoincidentes = nota.componentes.filter(c => mensaje.includes(c.toLowerCase()));
-      score += compCoincidentes.length * 3;
-    }
+    // Sumar puntos por cada palabra clave que aparezca
+    palabrasClave.forEach(palabra => {
+      // Aparicion en titulo o id (peso muy alto)
+      if (normalizar(nota.titulo || "").includes(palabra)) score += 5;
+      if (normalizar(nota.id || "").includes(palabra)) score += 5;
 
-    // Coincidencia por sistema
-    if (nota.sistema && mensaje.includes(nota.sistema.toLowerCase())) {
-      score += 3;
-    }
+      // Aparicion en sistema o vehiculo (peso alto)
+      if (normalizar(nota.sistema || "").includes(palabra)) score += 4;
+      if (normalizar(nota.vehiculo || "").includes(palabra)) score += 3;
 
-    // Coincidencia por ID
-    if (nota.id && mensaje.includes(nota.id.toLowerCase())) {
-      score += 8;
-    }
+      // Aparicion en sintomas o componentes (peso medio)
+      const sintomas = normalizar((nota.sintomas || []).join(" "));
+      const componentes = normalizar((nota.componentes || []).join(" "));
+      if (sintomas.includes(palabra)) score += 3;
+      if (componentes.includes(palabra)) score += 3;
 
-    // Coincidencia por palabras del titulo
-    if (nota.titulo) {
-      const palabrasTitulo = nota.titulo.toLowerCase().split(/\s+/);
-      const tituloCoincidencias = palabrasTitulo.filter(p => p.length > 3 && mensaje.includes(p));
-      score += tituloCoincidencias.length * 2;
-    }
+      // Aparicion en cualquier otro campo (peso bajo)
+      if (textoCompleto.includes(palabra)) score += 1;
+    });
 
-    // Busqueda de palabras clave en el contenido completo (peso bajo)
-    if (nota.contenido_completo) {
-      const palabrasMensaje = mensaje.split(/\s+/).filter(p => p.length > 4);
-      let coincidencias = 0;
-      palabrasMensaje.forEach(p => {
-        if (nota.contenido_completo.toLowerCase().includes(p)) coincidencias++;
-      });
-      score += Math.min(coincidencias, 5); // max 5 puntos por contenido
-    }
+    // Bonus si todas las palabras clave aparecen
+    const todasAparecen = palabrasClave.every(p => textoCompleto.includes(p));
+    if (todasAparecen) score += 5;
 
     return { nota, score };
   });
 
+  // Filtrar solo las que tienen suficiente coincidencia
   const relevantes = resultados
-    .filter(r => r.score > 0)
-    .sort((a, b) => b.score - a.score);
+    .filter(r => r.score >= 3) // umbral minimo
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3); // maximo 3 notas
 
   if (relevantes.length === 0) return null;
 
-  // Devolver hasta 2 notas mas relevantes con su CONTENIDO COMPLETO
-  return relevantes.slice(0, 2).map(r => {
+  return relevantes.map(r => {
     const n = r.nota;
-    let texto = `═══════════════════════════════════════\n`;
-    texto += `NOTA: ${n.id}\n`;
-    texto += `TITULO: ${n.titulo}\n`;
-    texto += `CATEGORIA: ${n.categoria}\n`;
-    texto += `SISTEMA: ${n.sistema}\n`;
-    texto += `VEHICULO: ${n.vehiculo || "General"}\n`;
-    if (n.video) texto += `VIDEO REFERENCIA: ${n.video}\n`;
-    texto += `NIVEL EVIDENCIA: ${n.nivel_evidencia}\n`;
-    texto += `═══════════════════════════════════════\n`;
-    texto += `CONTENIDO COMPLETO DEL DOCUMENTO:\n\n`;
-    texto += n.contenido_completo || "(sin contenido)";
-    texto += `\n═══════════════════════════════════════`;
-    return texto;
+    return `═══════════════════════════════════════
+NODO: ${n.id}
+CATEGORIA: ${n.categoria}
+SISTEMA: ${n.sistema}
+TITULO: ${n.titulo}
+VEHICULO: ${n.vehiculo || "N/A"}
+───────────────────────────────────────
+RESUMEN: ${n.resumen || "(sin resumen)"}
+───────────────────────────────────────
+${n.parametros_vitales && n.parametros_vitales.length > 0 ? `PARAMETROS VITALES:\n${n.parametros_vitales.map(p => "  • " + p).join("\n")}\n───────────────────────────────────────\n` : ""}${n.diagnostico_logico && n.diagnostico_logico.length > 0 ? `DIAGNOSTICO LOGICO:\n${n.diagnostico_logico.map(d => "  → " + d).join("\n")}\n───────────────────────────────────────\n` : ""}VERIFICACION: ${n.verificacion || "(no especificado)"}
+RESOLUCION: ${n.resolucion || "(no especificado)"}
+${n.falso_diagnostico ? `FALSO DIAGNOSTICO COMUN: ${n.falso_diagnostico}\n` : ""}${n.causa_raiz ? `CAUSA RAIZ: ${n.causa_raiz}\n` : ""}NIVEL DE EVIDENCIA: ${n.nivel_evidencia}
+${n.video ? `VIDEO: ${n.video}` : ""}
+═══════════════════════════════════════`;
   }).join("\n\n");
 }
 
