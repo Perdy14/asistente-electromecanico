@@ -10,10 +10,7 @@ responde EXACTAMENTE con este texto y nada mas:
 
 "⚠️ Informacion no disponible
 
-Esta consulta no se encuentra en la base de conocimiento actual.
-
-Para que pueda responderte, esta informacion debe ser anadida a la base de notas tecnicas
-desde Google Drive."
+Esta consulta no se encuentra en la base de conocimiento actual."
 
 Si la pregunta SI puede responderse con las notas:
 - Usa SOLO los datos exactos que aparecen en las notas (parametros, voltajes, presiones, etc.)
