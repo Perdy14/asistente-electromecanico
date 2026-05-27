@@ -265,6 +265,9 @@ body {
 .btn-enviar:hover { opacity: 0.85; }
 .btn-enviar:disabled { opacity: 0.3; cursor: not-allowed; }
 .input-hint { text-align: center; font-size: 9px; color: var(--text-muted); margin-top: 4px; }
+@media (max-width: 768px) {
+  .input-hint { display: none; }
+}
 
 /* ═══ PANEL CONTENT (Diagnóstico, Notas, Vídeos) ═══ */
 .panel-content { flex: 1; overflow-y: auto; padding: 20px; }

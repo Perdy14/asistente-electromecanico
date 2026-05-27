@@ -107,7 +107,12 @@ function cerrarSesion() {
 function setupEventListeners() {
   btnEnviar.addEventListener("click", enviarMensaje);
   inputMensaje.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviarMensaje(); }
+    // En movil, no enviar con Enter (el Enter en movil es nueva linea)
+    const esMovil = window.innerWidth <= 768 || /Mobile|Android|iPhone|iPad/i.test(navigator.userAgent);
+    if (e.key === "Enter" && !e.shiftKey && !esMovil) {
+      e.preventDefault();
+      enviarMensaje();
+    }
   });
   inputMensaje.addEventListener("input", () => {
     inputMensaje.style.height = "auto";
