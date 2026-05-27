@@ -370,12 +370,30 @@ async function enviarMensaje() {
 
   const { messageEl, contentEl } = crearMensajeAsistente();
   let textoCompleto = "";
+  let recibioToken = false;
+
+  // Si el servidor tarda mucho en responder (Render Free), mostrar aviso
+  const avisoLento = setTimeout(() => {
+    if (!recibioToken) {
+      contentEl.innerHTML = `
+        <div style="display:flex;flex-direction:column;gap:8px;font-size:12px;color:var(--text-muted);">
+          <div class="typing-indicator"><span></span><span></span><span></span></div>
+          <div>⏳ El servidor está despertando (puede tardar hasta 1 minuto la primera vez)...</div>
+        </div>
+      `;
+    }
+  }, 5000);
+
+  // Timeout maximo de 90 segundos
+  const controlador = new AbortController();
+  const timeout = setTimeout(() => controlador.abort(), 90000);
 
   try {
     const response = await fetch(`${API_URL}/api/mensaje/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mensaje, sessionId, usuarioId: usuario.id, conversacionId: conversacionActual })
+      body: JSON.stringify({ mensaje, sessionId, usuarioId: usuario.id, conversacionId: conversacionActual }),
+      signal: controlador.signal
     });
 
     const reader = response.body.getReader();
@@ -399,6 +417,8 @@ async function enviarMensaje() {
               if (meta) meta.innerHTML += `<span class="nota-badge-msg">📚 Nota técnica</span>`;
             }
           } else if (data.type === "token") {
+            recibioToken = true;
+            clearTimeout(avisoLento);
             textoCompleto += data.content;
             contentEl.innerHTML = renderMarkdown(textoCompleto) + '<span class="streaming-cursor"></span>';
             scrollToBottom();
@@ -410,7 +430,15 @@ async function enviarMensaje() {
       }
     }
   } catch (err) {
-    contentEl.innerHTML = renderMarkdown("⚠️ Error de conexión.");
+    clearTimeout(avisoLento);
+    if (err.name === "AbortError") {
+      contentEl.innerHTML = renderMarkdown("⚠️ El servidor tardó demasiado en responder. Inténtalo de nuevo en unos segundos.");
+    } else {
+      contentEl.innerHTML = renderMarkdown("⚠️ Error de conexión. Verifica tu internet e inténtalo de nuevo.");
+    }
+  } finally {
+    clearTimeout(timeout);
+    clearTimeout(avisoLento);
   }
 
   isStreaming = false;
