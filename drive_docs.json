@@ -1,5 +1,9 @@
 {
-  "_descripcion": "Configuracion de Google Drive. Si pones folder_id, el sistema detecta automaticamente todos los documentos publicos de esa carpeta. Si no, usa la lista manual de docs.",
+  "_descripcion": "Configuracion de Google Drive. folder_ids: lista de carpetas publicas a procesar. El sistema detecta automaticamente todos los documentos de cada carpeta.",
   "folder_id": "1QoaXx5-J7NtgxDVvhA-clQcTr3unHMrf",
+  "folder_ids": [
+    "1QoaXx5-J7NtgxDVvhA-clQcTr3unHMrf",
+    "196Zfd90-4jMhmxsBhh_axOC4ucuXYxz5"
+  ],
   "docs": []
 }
