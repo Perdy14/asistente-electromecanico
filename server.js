@@ -8,7 +8,16 @@ const dbModule = require("./db");
 const app = express();
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, "public")));
+// No cachear archivos estaticos para que los cambios se vean al instante
+app.use(express.static(path.join(__dirname, "public"), {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith(".html") || filePath.endsWith(".js") || filePath.endsWith(".css")) {
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+    }
+  }
+}));
 
 // ═══ CONFIGURACIÓN ═══
 // Clave de admin (cambiar en produccion via variable de entorno)
