@@ -254,18 +254,455 @@ async function cargarNotas() {
 function renderNotas(notas) {
   const grid = document.getElementById("notas-grid");
   if (!grid) return;
-  grid.innerHTML = notas.map(n => `
+  if (notas.length === 0) {
+    grid.innerHTML = '<p style="color:var(--text-muted);font-size:13px;padding:20px 0;">No se encontraron notas.</p>';
+    return;
+  }
+  grid.innerHTML = notas.map(n => {
+    // Limpiar síntomas: filtrar los que parecen artefactos de parseo
+    const sintomasLimpios = (n.sintomas || []).filter(s => s && s.trim().length > 2 && !s.trim().startsWith("- nodo:") && !s.trim().startsWith("\""));
+    const nivel = (n.nivel_evidencia || "medio").toLowerCase();
+    return `
     <div class="nota-card">
       <div class="nc-header">
-        <span class="nc-id">${n.id}</span>
-        <span class="nc-badge ${n.nivel_evidencia.toLowerCase()}">${n.nivel_evidencia}</span>
+        <span class="nc-id">${escapeHtml(n.id)}</span>
+        <span class="nc-badge ${nivel}">${escapeHtml(n.nivel_evidencia || "MEDIO")}</span>
       </div>
       <div class="nc-title">${escapeHtml(n.titulo)}</div>
       <div class="nc-sistema">${escapeHtml(n.sistema)}</div>
-      ${n.sintomas ? `<div class="nc-sintomas">${n.sintomas.slice(0, 6).map(s => `<span class="nc-sintoma">${escapeHtml(s)}</span>`).join("")}</div>` : ""}
-      ${n.video ? `<a href="${n.video}" target="_blank" class="nc-video">▶️ Ver vídeo</a>` : ""}
-    </div>
-  `).join("");
+      ${sintomasLimpios.length ? `<div class="nc-sintomas">${sintomasLimpios.slice(0, 5).map(s => `<span class="nc-sintoma">${escapeHtml(s)}</span>`).join("")}</div>` : ""}
+      <div class="nc-actions">
+        <button class="btn-ver-nota" data-nota-id="${escapeHtml(n.id)}">📄 Descargar nota PDF</button>
+        ${n.video ? `<a href="${escapeHtml(n.video)}" target="_blank" rel="noopener" class="nc-video">▶️ Ver vídeo</a>` : ""}
+      </div>
+    </div>`;
+  }).join("");
+
+  // Eventos de los botones
+  grid.querySelectorAll(".btn-ver-nota").forEach(btn => {
+    btn.addEventListener("click", () => generarPDFNota(btn.dataset.notaId));
+  });
+}
+
+// ── Utilidad: carga imagen desde URL proxy y devuelve dataURL ──
+async function cargarImagenProxy(url) {
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    const blob = await r.blob();
+    return await new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch { return null; }
+}
+
+// ── Limpia texto de artefactos del parser ──
+function limpiarTexto(t) {
+  if (!t) return "";
+  return t.replace(/\r\n/g, "\n")
+          .replace(/\r/g, "\n")
+          .replace(/\*/g, "")
+          .replace(/^[\/\-]\s*/gm, "")
+          .replace(/\n{3,}/g, "\n\n")
+          .trim();
+}
+
+function limpiarSintomas(arr) {
+  return (arr || []).filter(s => {
+    const t = (s || "").trim();
+    return t.length > 2
+      && !t.startsWith("- nodo:")
+      && !t.startsWith('"')
+      && !t.startsWith("* ")
+      && !/^[0-9]{3}"$/.test(t)
+      && t !== '001"' && t !== '002"' && t !== '003"';
+  }).map(s => s.replace(/^[-*"]+\s*/, "").replace(/"$/, "").trim());
+}
+
+async function generarPDFNota(notaId) {
+  const btn = document.querySelector(`.btn-ver-nota[data-nota-id="${notaId}"]`);
+  if (btn) { btn.textContent = "⏳ Generando PDF..."; btn.disabled = true; }
+
+  try {
+    const res = await fetch(`${API_URL}/api/notas/${encodeURIComponent(notaId)}`);
+    if (!res.ok) throw new Error("Nota no encontrada");
+    const n = await res.json();
+
+    // ── Pre-cargar imágenes antes de crear el doc ──
+    const ytMatch = (n.video || "").match(/(?:v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+    const videoId = ytMatch ? ytMatch[1] : null;
+    let thumbMain = null;
+    let fotogramas = [];
+    if (videoId) {
+      const [p, f1, f2, f3] = await Promise.all([
+        cargarImagenProxy(`${API_URL}/api/yt-thumb/${videoId}/0`),
+        cargarImagenProxy(`${API_URL}/api/yt-thumb/${videoId}/1`),
+        cargarImagenProxy(`${API_URL}/api/yt-thumb/${videoId}/2`),
+        cargarImagenProxy(`${API_URL}/api/yt-thumb/${videoId}/3`),
+      ]);
+      thumbMain = p;
+      // Si algún fotograma no cargó, usamos thumbMain como fallback
+      // pero solo si es distinto al anterior para no repetir
+      const raw = [f1, f2, f3];
+      raw.forEach((f, i) => {
+        const img = f || thumbMain;
+        if (img) fotogramas.push(img);
+      });
+    }
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+
+    // ── Paleta de colores ──
+    const AZUL    = [25,  65, 160];
+    const AZUL_L  = [215, 228, 255];
+    const AZUL_M  = [60, 100, 200];
+    const GRIS_D  = [40,  42,  54];
+    const GRIS_M  = [95,  98, 112];
+    const GRIS_L  = [238, 240, 245];
+    const BLANCO  = [255, 255, 255];
+    const VERDE   = [16, 148, 64];
+    const VERDE_L = [220, 252, 231];
+    const AMARILLO= [195, 130,  0];
+    const AMAR_L  = [254, 249, 220];
+    const ROJO    = [200,  30,  30];
+    const ROJO_L  = [254, 226, 226];
+    const NARANJA = [200, 100, 10];
+    const NARANL  = [255, 237, 213];
+
+    const PW = 210; const PH = 297; const ML = 14; const MR = 14; const CW = PW - ML - MR;
+    let y = 0;
+
+    function colorNivel(niv) {
+      const v = (niv||"").toUpperCase();
+      if (v==="ALTO") return [VERDE, VERDE_L];
+      if (v==="BAJO") return [ROJO, ROJO_L];
+      return [AMARILLO, AMAR_L];
+    }
+    function nuevaPagina() {
+      doc.addPage(); y = 16;
+      doc.setFillColor(...AZUL); doc.rect(0,0,PW,7,"F");
+      doc.setFont("helvetica","bold"); doc.setFontSize(6.5); doc.setTextColor(...BLANCO);
+      doc.text("MecánicaAI — IES La Palma", ML, 4.8);
+      doc.text(n.id, PW-MR, 4.8, {align:"right"});
+    }
+    function checkY(needed=12) { if (y+needed > PH-14) nuevaPagina(); }
+    function secTitulo(t, color=AZUL) {
+      checkY(12);
+      doc.setFillColor(...color); doc.rect(ML,y,3,7,"F");
+      doc.setFillColor(...GRIS_L); doc.rect(ML+3,y,CW-3,7,"F");
+      doc.setFont("helvetica","bold"); doc.setFontSize(8.5); doc.setTextColor(...color);
+      doc.text(t.toUpperCase(), ML+6, y+5); y+=10;
+    }
+    function txtBlk(t, opts={}) {
+      if (!t||!t.trim()) return;
+      const sz=opts.size||9, col=opts.color||GRIS_D, bold=opts.bold||false, indent=opts.indent||0;
+      doc.setFont("helvetica", bold?"bold":"normal"); doc.setFontSize(sz); doc.setTextColor(...col);
+      const lines=doc.splitTextToSize(t.trim(), CW-indent);
+      lines.forEach(l=>{ checkY(5); doc.text(l, ML+indent, y); y+=4.8; });
+      y += opts.after!==undefined ? opts.after : 1;
+    }
+    function itemLista(t, bullet="•", cb=AZUL_M) {
+      if (!t||!t.trim()) return;
+      const lines=doc.splitTextToSize(t.trim(), CW-9);
+      checkY(5);
+      doc.setFont("helvetica","bold"); doc.setFontSize(9); doc.setTextColor(...cb); doc.text(bullet,ML+2,y);
+      doc.setFont("helvetica","normal"); doc.setTextColor(...GRIS_D); doc.text(lines[0],ML+8,y); y+=4.8;
+      for(let i=1;i<lines.length;i++){checkY(5);doc.text(lines[i],ML+8,y);y+=4.8;}
+    }
+    function cajaBorde(t, bg, border, tc) {
+      if(!t||!t.trim()) return;
+      const lines=doc.splitTextToSize(limpiarTexto(t), CW-10);
+      const h=lines.length*4.8+6; checkY(h+4);
+      doc.setFillColor(...bg); doc.setDrawColor(...border); doc.setLineWidth(0.4);
+      doc.roundedRect(ML,y,CW,h,2,2,"FD");
+      doc.setFont("helvetica","normal"); doc.setFontSize(8.5); doc.setTextColor(...tc);
+      lines.forEach((l,i)=>doc.text(l,ML+5,y+5+i*4.8)); y+=h+4;
+    }
+    function tablaParams(items) {
+      if(!items||!items.length) return;
+      const col2=ML+CW/2+2, cW=CW/2-3;
+      for(let i=0;i<items.length;i+=2){
+        const p1=items[i], p2=items[i+1];
+        const l1=doc.splitTextToSize(p1.trim(),cW), l2=p2?doc.splitTextToSize(p2.trim(),cW):[];
+        const rH=Math.max(l1.length,l2.length)*4.5+5; checkY(rH+2);
+        const bg=i%4===0?GRIS_L:BLANCO;
+        doc.setFillColor(...bg); doc.rect(ML,y,CW,rH,"F");
+        doc.setDrawColor(220,224,232); doc.setLineWidth(0.15); doc.rect(ML,y,CW,rH,"S");
+        doc.line(col2-2,y,col2-2,y+rH);
+        doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(...GRIS_D);
+        l1.forEach((l,li)=>doc.text(l,ML+2,y+4.2+li*4.5));
+        doc.setTextColor(...AZUL); l2.forEach((l,li)=>doc.text(l,col2,y+4.2+li*4.5));
+        doc.setTextColor(...GRIS_D); y+=rH;
+      }
+      y+=4;
+    }
+    function insImg(dataUrl, w, h, cap="") {
+      checkY(h+(cap?8:2));
+      const x=ML+(CW-w)/2;
+      doc.setDrawColor(...GRIS_M); doc.setLineWidth(0.3);
+      doc.roundedRect(x-0.5,y-0.5,w+1,h+1,1.5,1.5,"S");
+      doc.addImage(dataUrl,"JPEG",x,y,w,h,undefined,"MEDIUM"); y+=h+1.5;
+      if(cap){doc.setFont("helvetica","italic");doc.setFontSize(7.5);doc.setTextColor(...GRIS_M);
+              doc.text(cap,ML+CW/2,y,{align:"center"});y+=5;}
+    }
+
+    function lineaDivisoria() {
+      checkY(4);
+      doc.setDrawColor(210, 215, 225);
+      doc.setLineWidth(0.2);
+      doc.line(ML, y, ML + CW, y);
+      y += 4;
+    }
+
+    // ════ PORTADA ════
+    doc.setFillColor(...AZUL); doc.rect(0,0,PW,80,"F");
+    doc.setFillColor(35,90,185); doc.rect(0,60,PW,25,"F");
+    doc.setFillColor(50,110,200); doc.rect(0,75,PW,12,"F");
+    doc.setFillColor(255,200,0); doc.rect(0,82,PW,1.2,"F");
+    doc.setFont("helvetica","bold"); doc.setFontSize(28); doc.setTextColor(...BLANCO);
+    doc.text("MecánicaAI", ML, 22);
+    doc.setFont("helvetica","normal"); doc.setFontSize(10); doc.setTextColor(180,210,255);
+    doc.text("Asistente Técnico Electromecánico — IES La Palma", ML, 30);
+    doc.setDrawColor(255,255,255); doc.setLineWidth(0.5); doc.line(ML,34,ML+CW,34);
+    const [nivColor, nivBg] = colorNivel(n.nivel_evidencia);
+    const cat=(n.categoria||"NOTA TÉCNICA").toUpperCase();
+    doc.setFillColor(60,110,200); doc.roundedRect(ML,38,72,8,2,2,"F");
+    doc.setFont("helvetica","bold"); doc.setFontSize(7.5); doc.setTextColor(...BLANCO);
+    doc.text(cat, ML+3, 43.2);
+    doc.setFillColor(...nivColor); doc.roundedRect(ML+76,38,40,8,2,2,"F");
+    doc.text("EVIDENCIA: "+(n.nivel_evidencia||"MEDIO").toUpperCase(), ML+79, 43.2);
+    const fecha=new Date().toLocaleDateString("es-ES",{day:"2-digit",month:"long",year:"numeric"});
+    doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(180,210,255);
+    doc.text(fecha, PW-MR, 43.2, {align:"right"});
+    doc.setFont("courier","bold"); doc.setFontSize(8.5); doc.setTextColor(255,230,100);
+    doc.text(n.id, ML, 55);
+    doc.setFont("helvetica","bold"); doc.setFontSize(16); doc.setTextColor(...BLANCO);
+    const tituloL=doc.splitTextToSize(n.titulo,CW);
+    tituloL.forEach((l,i)=>doc.text(l, ML, 64+i*8));
+    y = 88;
+    if (thumbMain) {
+      const imgW=CW, imgH=Math.round(imgW*9/16);
+      insImg(thumbMain, imgW, imgH, videoId ? `Miniatura del video · youtube.com/watch?v=${videoId}` : "");
+    }
+    // Ficha técnica
+    checkY(28);
+    doc.setFillColor(...GRIS_L); doc.setDrawColor(210,215,228); doc.setLineWidth(0.3);
+    doc.roundedRect(ML,y,CW,24,2,2,"FD");
+    [["SISTEMA",n.sistema||"-"],["VEHÍCULO",n.vehiculo||"General"],["AUTOR",n.autor||"-"],["CATEGORÍA",n.categoria||"-"]].forEach(([label,val],i)=>{
+      const fx=ML+4+(i%2)*(CW/2), fy=y+6+Math.floor(i/2)*10;
+      doc.setFont("helvetica","bold"); doc.setFontSize(7.5); doc.setTextColor(...GRIS_M); doc.text(label+":", fx, fy);
+      doc.setFont("helvetica","normal"); doc.setTextColor(...GRIS_D);
+      doc.text(doc.splitTextToSize(val, CW/2-22)[0], fx+22, fy);
+    });
+    y += 28;
+
+    // ════ CONTENIDO ════
+    nuevaPagina();
+
+    // ── SÍNTOMAS ──
+    const sintomas = limpiarSintomas(n.sintomas);
+    if (sintomas.length) {
+      secTitulo("SINTOMAS IDENTIFICADOS", ROJO);
+      sintomas.forEach(s => itemLista(s, "▸", ROJO));
+      y += 3;
+    }
+
+    // ── RESUMEN ──
+    const resumen = limpiarTexto(n.resumen);
+    if (resumen) {
+      secTitulo("RESUMEN TECNICO", AZUL);
+      resumen.split("\n").filter(b=>b.trim()).forEach(b => txtBlk(b, {size:9, after:1}));
+      y += 2;
+    }
+
+    // ── PARÁMETROS VITALES ──
+    const params = (n.parametros_vitales||[]).filter(p=>p&&p.trim().length>3);
+    if (params.length) {
+      secTitulo("PARAMETROS VITALES DE REFERENCIA", AZUL_M);
+      tablaParams(params);
+    }
+
+    // ── COMPONENTES ──
+    const comps = (n.componentes||[]).filter(c=>c&&c.trim());
+    if (comps.length) {
+      secTitulo("COMPONENTES IMPLICADOS", GRIS_M);
+      comps.forEach(c => itemLista(c, "◆", AZUL_M));
+      y += 3;
+    }
+
+    // ── DIAGNÓSTICO LÓGICO ──
+    const diag = (n.diagnostico_logico||[]).filter(d=>d&&d.trim());
+    if (diag.length) {
+      secTitulo("ARBOL DE DIAGNOSTICO LOGICO", AZUL);
+      diag.forEach((d, i) => {
+        const partes = d.trim().split(/\s*->\s*ENTONCES\s*/i);
+        const condLines = doc.splitTextToSize((partes[0]||"").replace(/^SI\s*/i,"").trim(), CW-24);
+        const acciLines = partes[1] ? doc.splitTextToSize(partes[1].trim(), CW-24) : [];
+        const h = Math.max(condLines.length, acciLines.length)*4.5+10;
+        checkY(h+4);
+        doc.setFillColor(...AZUL_L); doc.setDrawColor(...AZUL_M); doc.setLineWidth(0.4);
+        doc.roundedRect(ML, y, CW, h, 2, 2, "FD");
+        doc.setFillColor(...AZUL); doc.circle(ML+6, y+h/2, 4, "F");
+        doc.setFont("helvetica","bold"); doc.setFontSize(8); doc.setTextColor(...BLANCO);
+        doc.text(String(i+1), ML+6, y+h/2+2.5, {align:"center"});
+        doc.setFont("helvetica","bold"); doc.setFontSize(7.5); doc.setTextColor(...AZUL);
+        doc.text("SI", ML+14, y+5.5);
+        doc.setFont("helvetica","normal"); doc.setTextColor(...GRIS_D);
+        condLines.forEach((l,li)=>doc.text(l, ML+20, y+5.5+li*4.5));
+        if (partes[1]) {
+          const yEnt=y+5.5+condLines.length*4.5+1;
+          doc.setFont("helvetica","bold"); doc.setFontSize(7.5); doc.setTextColor(...VERDE);
+          doc.text("=>", ML+14, yEnt);
+          doc.setFont("helvetica","normal"); doc.setTextColor(...GRIS_D);
+          acciLines.forEach((l,li)=>doc.text(l, ML+20, yEnt+li*4.5));
+        }
+        y += h+3;
+      });
+      y += 2;
+    }
+
+    // ── VERIFICACIÓN ──
+    const verif = limpiarTexto(n.verificacion);
+    if (verif && verif.length > 6) {
+      secTitulo("PROCESO DE VERIFICACION", AZUL_M);
+      txtBlk(verif);
+    }
+
+    // ── RESOLUCIÓN ──
+    const resol = limpiarTexto(n.resolucion);
+    if (resol && resol.length > 4 && resol !== "Y FALSO DIAGNÓSTICO") {
+      secTitulo("RESOLUCION", VERDE);
+      cajaBorde(resol, VERDE_L, VERDE, GRIS_D);
+    }
+
+    // ── FALSO DIAGNÓSTICO ──
+    const falso = limpiarTexto(n.falso_diagnostico);
+    if (falso && falso.length > 6) {
+      secTitulo("FALSO DIAGNOSTICO / INTERVENCION CORRECTIVA", ROJO);
+      cajaBorde(falso, ROJO_L, ROJO, ROJO);
+    }
+
+    // ── CAUSA RAÍZ ──
+    const causa = limpiarTexto(n.causa_raiz);
+    if (causa && causa.length > 4) {
+      secTitulo("CAUSA RAIZ", NARANJA);
+      cajaBorde(causa, NARANL, NARANJA, NARANJA);
+    }
+
+    // ════ PÁGINA DE IMÁGENES ════
+    if (thumbMain || videoId) {
+      nuevaPagina();
+      secTitulo("CAPTURAS DEL VIDEO DE REFERENCIA", AZUL);
+
+      // ── Miniatura principal grande (portada del vídeo) ──
+      if (thumbMain) {
+        const imgW = CW;
+        const imgH = Math.round(imgW * 9 / 16);
+        insImg(thumbMain, imgW, imgH, "Miniatura oficial del vídeo");
+        y += 4;
+      }
+
+      // ── Fotogramas reales del vídeo con texto explicativo ──
+      // Los textos los sacamos del diagnóstico lógico y resumen
+      const diagItems = (n.diagnostico_logico || []).filter(d => d && d.trim());
+      const resumenLineas = limpiarTexto(n.resumen).split("\n").filter(l => l.trim().length > 10);
+      const textosCaptura = [
+        diagItems[0] ? diagItems[0].replace(/^SI\s*/i,"").split(/->.*ENTONCES/i)[0].trim() : (resumenLineas[0] || "Inicio del procedimiento de diagnóstico"),
+        diagItems[1] ? diagItems[1].replace(/^SI\s*/i,"").split(/->.*ENTONCES/i)[0].trim() : (resumenLineas[1] || "Desarrollo del análisis técnico"),
+        diagItems[2] ? diagItems[2].replace(/^SI\s*/i,"").split(/->.*ENTONCES/i)[0].trim() : (resumenLineas[2] || "Verificación y resolución del fallo"),
+      ];
+
+      if (fotogramas.length > 0) {
+        secTitulo("FOTOGRAMAS DEL VIDEO (MOMENTOS CLAVE)", AZUL_M);
+
+        fotogramas.forEach((img, i) => {
+          const momento = i === 0 ? "25% del vídeo" : i === 1 ? "50% del vídeo" : "75% del vídeo";
+          const descripcion = textosCaptura[i] || "";
+
+          checkY(45);
+          // Layout: imagen izquierda (60%) + texto derecho (40%)
+          const imgW = CW * 0.58;
+          const imgH = Math.round(imgW * 9 / 16);
+          const textX = ML + imgW + 5;
+          const textW = CW - imgW - 5;
+
+          // Borde imagen
+          doc.setDrawColor(...GRIS_M); doc.setLineWidth(0.3);
+          doc.roundedRect(ML - 0.5, y - 0.5, imgW + 1, imgH + 1, 1.5, 1.5, "S");
+          doc.addImage(img, "JPEG", ML, y, imgW, imgH, undefined, "FAST");
+
+          // Texto derecho
+          doc.setFillColor(...AZUL_L);
+          doc.roundedRect(textX, y, textW, imgH, 2, 2, "F");
+
+          // Número de fotograma
+          doc.setFillColor(...AZUL);
+          doc.roundedRect(textX + 2, y + 2, textW - 4, 8, 1.5, 1.5, "F");
+          doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.setTextColor(...BLANCO);
+          doc.text(`FOTOGRAMA ${i + 1}  ·  ${momento}`, textX + 4, y + 7);
+
+          // Descripción
+          doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(...GRIS_D);
+          const descLines = doc.splitTextToSize(descripcion, textW - 6);
+          descLines.slice(0, 5).forEach((l, li) => {
+            doc.text(l, textX + 3, y + 14 + li * 5);
+          });
+
+          // Etiqueta "Ver en vídeo"
+          if (n.video) {
+            doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(...AZUL);
+            doc.text("► Ver en el vídeo completo", textX + 3, y + imgH - 4);
+          }
+
+          // Caption bajo imagen
+          doc.setFont("helvetica", "italic"); doc.setFontSize(7.5); doc.setTextColor(...GRIS_M);
+          doc.text(`Fotograma ${i + 1} — ${momento}`, ML + imgW / 2, y + imgH + 4, { align: "center" });
+
+          y += imgH + 8;
+        });
+      }
+
+      // ── Enlace al vídeo ──
+      y += 2; checkY(22);
+      const videoUrl = n.video || `https://www.youtube.com/watch?v=${videoId}`;
+      doc.setFillColor(...ROJO_L); doc.setDrawColor(...ROJO); doc.setLineWidth(0.5);
+      doc.roundedRect(ML, y, CW, 20, 3, 3, "FD");
+      doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(180, 30, 30);
+      doc.text("►  Video de referencia completo", ML + 6, y + 7);
+      doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(...AZUL);
+      doc.textWithLink(videoUrl, ML + 6, y + 14, { url: videoUrl });
+      doc.setFont("helvetica", "italic"); doc.setFontSize(7.5); doc.setTextColor(...GRIS_M);
+      doc.text("Haz clic en el enlace para ver el video completo en YouTube", ML + 6, y + 19);
+      y += 24;
+    }
+
+    // ════ PIE EN TODAS LAS PÁGINAS ════
+    const APP_URL = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+      ? "https://mecanicaai.tailabb588.ts.net"
+      : window.location.origin;
+    const totalPages = doc.getNumberOfPages();
+    for (let i=1; i<=totalPages; i++) {
+      doc.setPage(i);
+      doc.setFillColor(...GRIS_L); doc.rect(0, PH-11, PW, 11, "F");
+      doc.setFillColor(...AZUL); doc.rect(0, PH-11, 2, 11, "F");
+      doc.setFont("helvetica","normal"); doc.setFontSize(7); doc.setTextColor(...GRIS_M);
+      doc.text(`MecánicaAI  ·  IES La Palma  ·  ${APP_URL}`, ML, PH-4.5);
+      doc.setFont("helvetica","bold");
+      doc.text(`${i} / ${totalPages}`, PW-MR, PH-4.5, {align:"right"});
+    }
+
+    const nombreArchivo = `NT_${n.id.replace(/[^a-zA-Z0-9_-]/g,"_")}.pdf`;
+    doc.save(nombreArchivo);
+
+  } catch (err) {
+    alert("Error al generar el PDF: " + err.message);
+  } finally {
+    if (btn) { btn.textContent = "📄 Descargar nota PDF"; btn.disabled = false; }
+  }
 }
 
 function filtrarNotas() {

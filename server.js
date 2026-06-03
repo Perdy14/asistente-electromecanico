@@ -249,6 +249,14 @@ app.get("/api/notas", (req, res) => {
   })));
 });
 
+app.get("/api/notas/:id", (req, res) => {
+  delete require.cache[require.resolve("./notas.json")];
+  const notas = require("./notas.json");
+  const nota = notas.find(n => n.id === req.params.id);
+  if (!nota) return res.status(404).json({ error: "Nota no encontrada" });
+  res.json(nota);
+});
+
 app.post("/api/notas", (req, res) => {
   const fs = require("fs");
   const notaPath = path.join(__dirname, "notas.json");
@@ -292,6 +300,42 @@ app.post("/api/sync-drive", async (req, res) => {
 
 app.post("/api/limpiar", (req, res) => {
   res.json({ ok: true });
+});
+
+// Proxy miniatura YouTube (evita CORS al generar PDF)
+app.get("/api/yt-thumb/:videoId/:frame?", async (req, res) => {
+  const videoId = req.params.videoId.replace(/[^a-zA-Z0-9_-]/g, "");
+  const frame = req.params.frame;
+  if (!videoId) return res.status(400).end();
+
+  // frame 0 o sin frame => portada máxima calidad
+  // frame 1,2,3 => fotogramas reales del vídeo en distintos momentos
+  // Si el fotograma pedido no existe, hacemos fallback a hqdefault
+  let archivos;
+  if (!frame || frame === "0") {
+    archivos = ["maxresdefault.jpg", "sddefault.jpg", "hqdefault.jpg", "mqdefault.jpg"];
+  } else {
+    // Intentar el fotograma real; si falla, caer en variantes de miniatura
+    archivos = [`${frame}.jpg`, "hqdefault.jpg", "mqdefault.jpg"];
+  }
+
+  try {
+    for (const file of archivos) {
+      const url = `https://img.youtube.com/vi/${videoId}/${file}`;
+      const response = await fetch(url);
+      if (!response.ok) continue;
+      const buffer = await response.arrayBuffer();
+      // YouTube devuelve un placeholder gris de exactamente 120x90 (~1-2KB) cuando no existe
+      // Lo detectamos por tamaño: < 500 bytes = placeholder vacío
+      if (buffer.byteLength < 500) continue;
+      res.setHeader("Content-Type", "image/jpeg");
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      return res.send(Buffer.from(buffer));
+    }
+    res.status(404).end();
+  } catch (err) {
+    res.status(500).end();
+  }
 });
 
 // Buscar videos en YouTube

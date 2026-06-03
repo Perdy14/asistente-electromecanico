@@ -7,11 +7,13 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>MecánicaAI</title>
-  <link rel="stylesheet" href="styles.css?v=9">
+  <link rel="stylesheet" href="styles.css?v=10">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔧</text></svg>">
+  <!-- jsPDF para generar PDFs de notas técnicas -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body>
   <!-- ═══ PANTALLA DE LOGIN ═══ -->
@@ -383,6 +385,14 @@
     </main>
   </div>
 
-  <script src="app.js?v=9"></script>
+  <!-- ═══ MODAL NOTA TÉCNICA ═══ -->
+  <div id="modal-nota" class="modal-overlay hidden" onclick="if(event.target===this)cerrarModalNota()">
+    <div class="modal-box">
+      <button class="modal-close" onclick="cerrarModalNota()">✕</button>
+      <div id="modal-nota-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <script src="app.js?v=10"></script>
 </body>
 </html>
